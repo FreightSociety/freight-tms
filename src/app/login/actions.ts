@@ -1,0 +1,28 @@
+"use server";
+
+import { signIn } from "@/lib/auth";
+import { AuthError } from "next-auth";
+
+export async function loginAction(
+  _prevState: { error: string | null },
+  formData: FormData
+): Promise<{ error: string | null }> {
+  const email = String(formData.get("email") || "");
+  const password = String(formData.get("password") || "");
+  const callbackUrl = String(formData.get("callbackUrl") || "/dashboard");
+
+  try {
+    await signIn("credentials", {
+      email,
+      password,
+      redirectTo: callbackUrl || "/dashboard",
+    });
+    return { error: null };
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return { error: "Invalid email or password." };
+    }
+    // NEXT_REDIRECT is thrown on success; rethrow it so Next can navigate.
+    throw err;
+  }
+}
