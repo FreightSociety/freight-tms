@@ -1,14 +1,21 @@
 import { requireRole } from "@/lib/session";
-import { getCarrierById } from "@/lib/data/queries";
+import { getCarrierById, getVettingHistory } from "@/lib/data/queries";
 import { notFound } from "next/navigation";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { Field, Input, Select, Textarea, Button } from "@/components/ui/Form";
+import { Table, THead, Th, Td, Tr, EmptyState } from "@/components/ui/Table";
 import { updateCarrier } from "@/lib/actions/carriers";
 import { FmcsaLookupAction } from "../../FmcsaLookupAction";
 import { Carrier411LookupAction } from "../../Carrier411LookupAction";
 import { Badge } from "@/components/ui/Badge";
 import { formatDateTime } from "@/lib/utils/format";
 import { toInputDate } from "@/lib/utils/format";
+
+const authorityColor: Record<string, "green" | "amber" | "red"> = {
+  ACTIVE: "green",
+  INACTIVE: "amber",
+  REVOKED: "red",
+};
 
 export default async function EditCarrierPage({
   params,
@@ -20,6 +27,7 @@ export default async function EditCarrierPage({
   const carrier = await getCarrierById(id);
   if (!carrier) notFound();
   const carrierId = carrier.id;
+  const vettingHistory = await getVettingHistory(carrierId);
 
   async function boundAction(formData: FormData) {
     "use server";
@@ -54,6 +62,42 @@ export default async function EditCarrierPage({
             {carrier.carrier411Raw && <SmsScoreBadges rawJson={carrier.carrier411Raw} />}
           </div>
         </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="Vetting History" subtitle="Every FMCSA / Carrier411 check ever run for this carrier." />
+        {vettingHistory.length === 0 ? (
+          <EmptyState title="No checks yet" message="Run an FMCSA or Carrier411 lookup above to start building a history." />
+        ) : (
+          <Table>
+            <THead>
+              <Th>Date</Th>
+              <Th>Source</Th>
+              <Th>Legal Name</Th>
+              <Th>Authority Status</Th>
+              <Th>Safety Rating</Th>
+            </THead>
+            <tbody>
+              {vettingHistory.map((v) => (
+                <Tr key={v.id}>
+                  <Td>{formatDateTime(v.checkedAt)}</Td>
+                  <Td>
+                    <Badge color={v.source === "CARRIER411" ? "purple" : "blue"}>{v.source}</Badge>
+                  </Td>
+                  <Td>{v.legalName || "—"}</Td>
+                  <Td>
+                    {v.authorityStatus ? (
+                      <Badge color={authorityColor[v.authorityStatus]}>{v.authorityStatus}</Badge>
+                    ) : (
+                      "—"
+                    )}
+                  </Td>
+                  <Td>{v.safetyRating ? v.safetyRating.replace("_", " ") : "—"}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
       </Card>
 
       <Card>

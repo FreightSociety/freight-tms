@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { lookupCarrier411 } from "@/lib/carrier411";
+import { db } from "@/lib/db";
+import { carrierVettingChecks } from "@/lib/db/schema";
+
+function newId(prefix: string): string {
+  return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+}
 
 export async function GET(request: NextRequest) {
   const session = await auth();
@@ -10,6 +16,7 @@ export async function GET(request: NextRequest) {
 
   const dot = request.nextUrl.searchParams.get("dot");
   const mc = request.nextUrl.searchParams.get("mc");
+  const carrierId = request.nextUrl.searchParams.get("carrierId");
   const identifier = dot || mc;
 
   if (!identifier) {
@@ -17,5 +24,20 @@ export async function GET(request: NextRequest) {
   }
 
   const result = await lookupCarrier411(identifier);
+
+  if (result.ok && carrierId) {
+    await db.insert(carrierVettingChecks).values({
+      id: newId("cvc"),
+      carrierId,
+      source: "CARRIER411",
+      identifierUsed: identifier,
+      legalName: result.data.legalName,
+      authorityStatus: result.data.authorityStatus,
+      safetyRating: result.data.safetyRating,
+      raw: JSON.stringify(result.data.raw),
+      checkedById: session.user.id,
+    });
+  }
+
   return NextResponse.json(result);
 }

@@ -100,7 +100,7 @@ export default async function CarriersPage() {
                             Edit
                           </Link>
                           <FmcsaLookupButton dotNumber={c.dotNumber} mcNumber={c.mcNumber} />
-                          <Carrier411LookupButton dotNumber={c.dotNumber} mcNumber={c.mcNumber} />
+                          <Carrier411LookupButton dotNumber={c.dotNumber} mcNumber={c.mcNumber} carrierId={c.id} />
                         </div>
                       </Td>
                     )}

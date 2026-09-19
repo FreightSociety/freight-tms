@@ -7,9 +7,11 @@ import {
   tracking,
   loadBoardPosts,
   quotes,
+  carrierVettingChecks,
+  loadBoardPostings,
 } from "@/lib/db/schema";
-import { eq, desc, asc, sql as dsql } from "drizzle-orm";
-import { grossProfit } from "@/lib/utils/compute";
+import { eq, desc, asc, inArray, sql as dsql } from "drizzle-orm";
+import { grossProfit, trackingStage, type TrackingStage } from "@/lib/utils/compute";
 
 export async function getAllLoads() {
   return db.query.loads.findMany({
@@ -148,6 +150,117 @@ export async function findPublicTracking(loadNumber: string, zip: string) {
   if (trackRow.deliveryZip.trim() !== zip.trim()) return null;
 
   return { load: loadRow, tracking: trackRow };
+}
+
+export async function getVettingHistory(carrierId: string) {
+  return db.query.carrierVettingChecks.findMany({
+    where: eq(carrierVettingChecks.carrierId, carrierId),
+    with: { checkedBy: true },
+    orderBy: [desc(carrierVettingChecks.checkedAt)],
+  });
+}
+
+export async function getLoadBoardPostings() {
+  return db.query.loadBoardPostings.findMany({
+    with: { load: true },
+    orderBy: [desc(loadBoardPostings.lastSyncedAt), desc(loadBoardPostings.createdAt)],
+  });
+}
+
+export async function getLoadBoardPostingsForLoad(loadId: string) {
+  return db.query.loadBoardPostings.findMany({
+    where: eq(loadBoardPostings.loadId, loadId),
+    orderBy: [desc(loadBoardPostings.createdAt)],
+  });
+}
+
+export async function getDashboardOperationsSnapshot() {
+  const allLoads = await db.query.loads.findMany({
+    with: { tracking: true },
+  });
+
+  const now = new Date();
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const weekAhead = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const activeLoads = allLoads.filter((l) => !l.tracking?.deliveredAt).length;
+
+  const pickedUpThisWeek = allLoads.filter((l) => {
+    if (!l.tracking?.pickedUpAt) return false;
+    const d = new Date(l.tracking.pickedUpAt);
+    return d >= weekAgo && d <= now;
+  }).length;
+
+  const upcomingPickups7d = allLoads.filter((l) => {
+    if (l.tracking?.pickedUpAt) return false;
+    const d = new Date(l.date);
+    return d >= now && d <= weekAhead;
+  }).length;
+
+  const byStatus: Record<TrackingStage, number> = {
+    PENDING: 0,
+    BOOKED: 0,
+    PICKED_UP: 0,
+    IN_TRANSIT: 0,
+    OUT_FOR_DELIVERY: 0,
+    DELIVERED: 0,
+  };
+  for (const l of allLoads) {
+    const stage = l.tracking
+      ? trackingStage(l.tracking)
+      : "PENDING";
+    byStatus[stage]++;
+  }
+
+  return { activeLoads, pickedUpThisWeek, upcomingPickups7d, byStatus, totalLoads: allLoads.length };
+}
+
+export async function getUpcomingPickupsAndDeliveries(limit = 8) {
+  const allLoads = await db.query.loads.findMany({
+    with: { customer: true, carrier: true, tracking: true },
+  });
+
+  const now = new Date();
+
+  const withNextDate = allLoads
+    .filter((l) => !l.tracking?.deliveredAt)
+    .map((l) => {
+      const pickupDate = new Date(l.date);
+      const deliveryEta = l.tracking?.eta ? new Date(l.tracking.eta) : null;
+      const nextDate = l.tracking?.pickedUpAt
+        ? deliveryEta ?? pickupDate
+        : pickupDate;
+      const kind = l.tracking?.pickedUpAt ? ("delivery" as const) : ("pickup" as const);
+      return { load: l, nextDate, kind };
+    })
+    .filter((x) => x.nextDate >= now)
+    .sort((a, b) => a.nextDate.getTime() - b.nextDate.getTime())
+    .slice(0, limit);
+
+  return withNextDate;
+}
+
+export async function getOpenQuotesCount() {
+  const rows = await db
+    .select({ status: quotes.status })
+    .from(quotes)
+    .where(inArray(quotes.status, ["NEW", "QUOTED"]));
+  return rows.length;
+}
+
+export async function getRecentOpenQuotes(limit = 5) {
+  return db.query.quotes.findMany({
+    where: inArray(quotes.status, ["NEW", "QUOTED"]),
+    orderBy: [desc(quotes.receivedAt)],
+    limit,
+  });
+}
+
+export async function getLoadBoardPostingStatusCounts() {
+  const rows = await db.select({ status: loadBoardPostings.status }).from(loadBoardPostings);
+  const counts: Record<string, number> = { POSTED: 0, COVERED: 0, EXPIRED: 0, REMOVED: 0 };
+  for (const r of rows) counts[r.status] = (counts[r.status] ?? 0) + 1;
+  return { total: rows.length, counts };
 }
 
 export async function getNextLoadNumber() {

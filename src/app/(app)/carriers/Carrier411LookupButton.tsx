@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/Form";
 export function Carrier411LookupButton({
   dotNumber,
   mcNumber,
+  carrierId,
 }: {
   dotNumber?: string | null;
   mcNumber?: string | null;
+  carrierId?: string;
 }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -26,7 +28,8 @@ export function Carrier411LookupButton({
         return;
       }
       const param = dotNumber ? `dot=${encodeURIComponent(dotNumber)}` : `mc=${encodeURIComponent(mcNumber || "")}`;
-      const res = await fetch(`/api/carrier411/lookup?${param}`);
+      const carrierParam = carrierId ? `&carrierId=${encodeURIComponent(carrierId)}` : "";
+      const res = await fetch(`/api/carrier411/lookup?${param}${carrierParam}`);
       const json = await res.json();
       if (!json.ok) {
         setIsError(true);

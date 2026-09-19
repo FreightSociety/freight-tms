@@ -4,23 +4,69 @@ import {
   getBreakdownByCarrier,
   getBreakdownByAgent,
 } from "@/lib/data/analytics";
-import { Card, CardHeader } from "@/components/ui/Card";
+import { Card, CardHeader, CardBody } from "@/components/ui/Card";
 import { Table, THead, Th, Td, Tr, EmptyState } from "@/components/ui/Table";
 import { formatCurrency, formatPercent } from "@/lib/utils/format";
+import { TopCustomersChart, TopCarriersChart, ProfitByAgentChart } from "../dashboard/DashboardCharts";
 
 export default async function AnalyticsPage() {
-  await requireUser();
+  const user = await requireUser();
   const [byCustomer, byCarrier, byAgent] = await Promise.all([
     getBreakdownByCustomer(),
     getBreakdownByCarrier(),
     getBreakdownByAgent(),
   ]);
 
+  const topCustomers = byCustomer.slice(0, 5).map((c) => ({ name: c.name, revenue: c.revenue }));
+  const topCarriers = byCarrier
+    .slice()
+    .sort((a, b) => b.loads - a.loads)
+    .slice(0, 5)
+    .map((c) => ({ name: c.name, loads: c.loads }));
+  const agentProfit = byAgent
+    .filter((a) => user.role === "ADMIN" || a.id === user.id)
+    .map((a) => ({ name: a.name, profit: a.profit }));
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Analytics</h1>
         <p className="text-sm text-slate-500">Performance breakdowns computed live from the brokering log.</p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Card className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:col-span-2">
+          <div>
+            <CardHeader title="Top 5 Customers" subtitle="By revenue" />
+            <CardBody>
+              {topCustomers.length ? (
+                <TopCustomersChart data={topCustomers} />
+              ) : (
+                <p className="py-10 text-center text-sm text-slate-400">No customer revenue yet.</p>
+              )}
+            </CardBody>
+          </div>
+          <div>
+            <CardHeader title="Top 5 Carriers" subtitle="By load count" />
+            <CardBody>
+              {topCarriers.length ? (
+                <TopCarriersChart data={topCarriers} />
+              ) : (
+                <p className="py-10 text-center text-sm text-slate-400">No carrier loads yet.</p>
+              )}
+            </CardBody>
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title="Profit by Agent" subtitle={user.role === "ADMIN" ? "All agents, YTD" : "Your YTD profit"} />
+          <CardBody>
+            {agentProfit.length ? (
+              <ProfitByAgentChart data={agentProfit} />
+            ) : (
+              <p className="py-10 text-center text-sm text-slate-400">No loads yet.</p>
+            )}
+          </CardBody>
+        </Card>
       </div>
 
       <Card>

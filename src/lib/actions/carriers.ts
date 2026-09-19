@@ -1,13 +1,17 @@
 "use server";
 
 import { db } from "@/lib/db";
-import { carriers } from "@/lib/db/schema";
+import { carriers, carrierVettingChecks } from "@/lib/db/schema";
 import { requireUser, canWrite } from "@/lib/session";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { lookupFmcsa } from "@/lib/fmcsa";
 import { lookupCarrier411 } from "@/lib/carrier411";
+
+function newId(prefix: string): string {
+  return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+}
 
 const CarrierSchema = z.object({
   mcNumber: z.string().optional(),
@@ -105,7 +109,20 @@ export async function runFmcsaLookup(carrierId: string) {
     })
     .where(eq(carriers.id, carrierId));
 
+  await db.insert(carrierVettingChecks).values({
+    id: newId("cvc"),
+    carrierId,
+    source: "FMCSA",
+    identifierUsed: identifier,
+    legalName: result.data.legalName,
+    authorityStatus: result.data.authorityStatus,
+    safetyRating: result.data.safetyRating,
+    raw: JSON.stringify(result.data.raw),
+    checkedById: user.id,
+  });
+
   revalidatePath("/carriers");
+  revalidatePath(`/carriers/${carrierId}/edit`);
   return { error: null, data: result.data };
 }
 
@@ -136,6 +153,19 @@ export async function runCarrier411Lookup(carrierId: string) {
     })
     .where(eq(carriers.id, carrierId));
 
+  await db.insert(carrierVettingChecks).values({
+    id: newId("cvc"),
+    carrierId,
+    source: "CARRIER411",
+    identifierUsed: identifier,
+    legalName: result.data.legalName,
+    authorityStatus: result.data.authorityStatus,
+    safetyRating: result.data.safetyRating,
+    raw: JSON.stringify(result.data.raw),
+    checkedById: user.id,
+  });
+
   revalidatePath("/carriers");
+  revalidatePath(`/carriers/${carrierId}/edit`);
   return { error: null, data: result.data };
 }

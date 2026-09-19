@@ -43,6 +43,14 @@ export const invoiceStatusEnum = pgEnum("invoice_status", ["NOT_INVOICED", "INVO
 export const paymentStatusEnum = pgEnum("payment_status", ["PENDING", "PAID", "OVERDUE"]);
 export const loadBoardStatusEnum = pgEnum("load_board_status", ["OPEN", "COVERED"]);
 export const quoteStatusEnum = pgEnum("quote_status", ["NEW", "QUOTED", "BOOKED", "LOST", "EXPIRED"]);
+export const vettingSourceEnum = pgEnum("vetting_source", ["CARRIER411", "FMCSA"]);
+export const loadBoardNameEnum = pgEnum("load_board_name", ["DAT", "CENTRAL_DISPATCH"]);
+export const loadBoardPostingStatusEnum = pgEnum("load_board_posting_status", [
+  "POSTED",
+  "COVERED",
+  "EXPIRED",
+  "REMOVED",
+]);
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -195,6 +203,40 @@ export const quotes = pgTable("quotes", {
   updatedAt: timestamp("updated_at", { mode: "string" }).notNull().defaultNow(),
 });
 
+export const carrierVettingChecks = pgTable("carrier_vetting_checks", {
+  id: text("id").primaryKey(),
+  carrierId: text("carrier_id")
+    .notNull()
+    .references(() => carriers.id, { onDelete: "cascade" }),
+  checkedAt: timestamp("checked_at", { mode: "string" }).notNull().defaultNow(),
+  source: vettingSourceEnum("source").notNull(),
+  identifierUsed: text("identifier_used"),
+  legalName: text("legal_name"),
+  authorityStatus: authorityStatusEnum("authority_status"),
+  safetyRating: safetyRatingEnum("safety_rating"),
+  raw: text("raw"),
+  checkedById: text("checked_by_id").references(() => users.id),
+});
+
+export const loadBoardPostings = pgTable("load_board_postings", {
+  id: text("id").primaryKey(),
+  loadId: text("load_id")
+    .notNull()
+    .references(() => loads.id, { onDelete: "cascade" }),
+  board: loadBoardNameEnum("board").notNull(),
+  externalRef: text("external_ref"),
+  status: loadBoardPostingStatusEnum("status").notNull().default("POSTED"),
+  postedRate: doublePrecision("posted_rate"),
+  equipment: text("equipment"),
+  postedAt: timestamp("posted_at", { mode: "string" }),
+  lastSyncedAt: timestamp("last_synced_at", { mode: "string" }),
+  raw: text("raw"),
+  notes: text("notes"),
+  createdById: text("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at", { mode: "string" }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { mode: "string" }).notNull().defaultNow(),
+});
+
 // ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
@@ -202,6 +244,8 @@ export const quotes = pgTable("quotes", {
 export const usersRelations = relations(users, ({ many }) => ({
   loadsAsAgent: many(loads),
   quotesQuoted: many(quotes),
+  vettingChecksPerformed: many(carrierVettingChecks),
+  loadBoardPostingsCreated: many(loadBoardPostings),
 }));
 
 export const companiesRelations = relations(companies, ({ one, many }) => ({
@@ -213,14 +257,37 @@ export const companiesRelations = relations(companies, ({ one, many }) => ({
   loadsAsCarrier: many(loads, { relationName: "carrierLoads" }),
 }));
 
-export const carriersRelations = relations(carriers, ({ one }) => ({
+export const carriersRelations = relations(carriers, ({ one, many }) => ({
   company: one(companies, {
     fields: [carriers.companyId],
     references: [companies.id],
   }),
+  vettingChecks: many(carrierVettingChecks),
 }));
 
-export const loadsRelations = relations(loads, ({ one }) => ({
+export const carrierVettingChecksRelations = relations(carrierVettingChecks, ({ one }) => ({
+  carrier: one(carriers, {
+    fields: [carrierVettingChecks.carrierId],
+    references: [carriers.id],
+  }),
+  checkedBy: one(users, {
+    fields: [carrierVettingChecks.checkedById],
+    references: [users.id],
+  }),
+}));
+
+export const loadBoardPostingsRelations = relations(loadBoardPostings, ({ one }) => ({
+  load: one(loads, {
+    fields: [loadBoardPostings.loadId],
+    references: [loads.id],
+  }),
+  createdBy: one(users, {
+    fields: [loadBoardPostings.createdById],
+    references: [users.id],
+  }),
+}));
+
+export const loadsRelations = relations(loads, ({ one, many }) => ({
   customer: one(companies, {
     fields: [loads.customerId],
     references: [companies.id],
@@ -243,6 +310,7 @@ export const loadsRelations = relations(loads, ({ one }) => ({
     fields: [loads.id],
     references: [loadBoardPosts.loadId],
   }),
+  loadBoardPostings: many(loadBoardPostings),
 }));
 
 export const trackingRelations = relations(tracking, ({ one }) => ({
@@ -265,3 +333,5 @@ export type LoadRow = typeof loads.$inferSelect;
 export type TrackingRow = typeof tracking.$inferSelect;
 export type LoadBoardPostRow = typeof loadBoardPosts.$inferSelect;
 export type QuoteRow = typeof quotes.$inferSelect;
+export type CarrierVettingCheckRow = typeof carrierVettingChecks.$inferSelect;
+export type LoadBoardPostingRow = typeof loadBoardPostings.$inferSelect;

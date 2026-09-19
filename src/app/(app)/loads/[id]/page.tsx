@@ -1,14 +1,23 @@
 import { requireUser, canWrite } from "@/lib/session";
-import { getLoadById } from "@/lib/data/queries";
+import { getLoadById, getLoadBoardPostingsForLoad } from "@/lib/data/queries";
 import { notFound } from "next/navigation";
 import { Card, CardHeader, CardBody } from "@/components/ui/Card";
+import { Table, THead, Th, Td, Tr, EmptyState } from "@/components/ui/Table";
 import { Badge } from "@/components/ui/Badge";
-import { LinkButton, Button } from "@/components/ui/Form";
-import { formatCurrency, formatPercent, formatDate } from "@/lib/utils/format";
+import { LinkButton, Button, Field, Input, Select, Textarea } from "@/components/ui/Form";
+import { formatCurrency, formatPercent, formatDate, formatDateTime } from "@/lib/utils/format";
 import { grossProfit, profitMargin, revPerMile } from "@/lib/utils/compute";
 import { deleteLoad } from "@/lib/actions/loads";
 import { createBoardPostForLoad } from "@/lib/actions/loadboard";
+import { addLoadBoardPosting } from "@/lib/actions/loadboard-postings";
 import Link from "next/link";
+
+const postingStatusColor: Record<string, "green" | "amber" | "red" | "slate" | "blue"> = {
+  POSTED: "blue",
+  COVERED: "green",
+  EXPIRED: "amber",
+  REMOVED: "slate",
+};
 
 export default async function LoadDetailPage({
   params,
@@ -21,6 +30,13 @@ export default async function LoadDetailPage({
   if (!load) notFound();
 
   const writable = canWrite(user.role);
+  const loadId = load.id;
+  const postings = await getLoadBoardPostingsForLoad(loadId);
+
+  async function boundAddPosting(formData: FormData) {
+    "use server";
+    await addLoadBoardPosting(loadId, { error: null }, formData);
+  }
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -126,6 +142,77 @@ export default async function LoadDetailPage({
             ))
           }
         />
+      </Card>
+
+      <Card>
+        <CardHeader title="Load Board Postings" subtitle="Manual tracking of DAT / CentralDispatch postings for this load." />
+        <CardBody>
+          {postings.length === 0 ? (
+            <EmptyState title="No postings yet" message="Add a posting below once this load is listed on an external board." />
+          ) : (
+            <Table>
+              <THead>
+                <Th>Board</Th>
+                <Th>Status</Th>
+                <Th>External Ref</Th>
+                <Th className="text-right">Rate</Th>
+                <Th>Equipment</Th>
+                <Th>Last Synced</Th>
+                <Th>Notes</Th>
+              </THead>
+              <tbody>
+                {postings.map((p) => (
+                  <Tr key={p.id}>
+                    <Td>
+                      <Badge color="slate">{p.board === "CENTRAL_DISPATCH" ? "CentralDispatch" : "DAT"}</Badge>
+                    </Td>
+                    <Td>
+                      <Badge color={postingStatusColor[p.status] ?? "slate"}>{p.status}</Badge>
+                    </Td>
+                    <Td>{p.externalRef || "—"}</Td>
+                    <Td className="text-right">{p.postedRate ? formatCurrency(p.postedRate) : "—"}</Td>
+                    <Td>{p.equipment || "—"}</Td>
+                    <Td>{formatDateTime(p.lastSyncedAt)}</Td>
+                    <Td className="max-w-xs truncate">{p.notes || "—"}</Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+
+          {writable && (
+            <form action={boundAddPosting} className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
+              <Field label="Board" required>
+                <Select name="board" required defaultValue="DAT">
+                  <option value="DAT">DAT</option>
+                  <option value="CENTRAL_DISPATCH">CentralDispatch</option>
+                </Select>
+              </Field>
+              <Field label="External Ref">
+                <Input name="externalRef" placeholder="Posting ID on the board" />
+              </Field>
+              <Field label="Status" required>
+                <Select name="status" required defaultValue="POSTED">
+                  <option value="POSTED">Posted</option>
+                  <option value="COVERED">Covered</option>
+                  <option value="EXPIRED">Expired</option>
+                  <option value="REMOVED">Removed</option>
+                </Select>
+              </Field>
+              <Field label="Rate">
+                <Input type="number" step="0.01" name="postedRate" />
+              </Field>
+              <div className="sm:col-span-2">
+                <Field label="Notes">
+                  <Textarea name="notes" rows={2} />
+                </Field>
+              </div>
+              <div className="sm:col-span-2">
+                <Button type="submit">Add Posting</Button>
+              </div>
+            </form>
+          )}
+        </CardBody>
       </Card>
     </div>
   );

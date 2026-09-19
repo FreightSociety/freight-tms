@@ -1,8 +1,9 @@
 import { requireRole } from "@/lib/session";
 import { getFinancialsByYear } from "@/lib/data/analytics";
-import { Card, CardHeader, KpiCard } from "@/components/ui/Card";
+import { Card, CardHeader, CardBody, KpiCard } from "@/components/ui/Card";
 import { Table, THead, Th, Td, Tr } from "@/components/ui/Table";
 import { formatCurrency, formatPercent } from "@/lib/utils/format";
+import { RevenueTrendChart } from "../dashboard/DashboardCharts";
 
 export default async function FinancialsPage({
   searchParams,
@@ -15,6 +16,9 @@ export default async function FinancialsPage({
   const data = await getFinancialsByYear(year);
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
   const ytdMargin = data.ytd.revenue ? data.ytd.profit / data.ytd.revenue : 0;
+  const isCurrentYear = year === new Date().getFullYear();
+  const thisMonth = isCurrentYear ? data.monthly[new Date().getMonth()] : null;
+  const trendData = data.monthly.map((m) => ({ month: m.month, revenue: m.revenue, profit: m.profit }));
 
   return (
     <div className="space-y-6">
@@ -40,12 +44,31 @@ export default async function FinancialsPage({
         </form>
       </div>
 
+      {thisMonth && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <KpiCard label="Revenue (This Month)" value={formatCurrency(thisMonth.revenue)} sub={`${thisMonth.loads} loads`} />
+          <KpiCard
+            label="Profit (This Month)"
+            value={formatCurrency(thisMonth.profit)}
+            accent="green"
+            sub={thisMonth.revenue ? formatPercent(thisMonth.profit / thisMonth.revenue) + " margin" : undefined}
+          />
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <KpiCard label="YTD Revenue" value={formatCurrency(data.ytd.revenue)} />
         <KpiCard label="YTD Cost" value={formatCurrency(data.ytd.cost)} />
         <KpiCard label="YTD Profit" value={formatCurrency(data.ytd.profit)} accent="green" />
         <KpiCard label="YTD Margin" value={formatPercent(ytdMargin)} />
       </div>
+
+      <Card>
+        <CardHeader title="Revenue & Profit Trend" subtitle={`Monthly, ${year}`} />
+        <CardBody>
+          <RevenueTrendChart data={trendData} />
+        </CardBody>
+      </Card>
 
       <Card>
         <CardHeader title="By Month" />
